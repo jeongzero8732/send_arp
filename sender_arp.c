@@ -51,8 +51,8 @@ ARP_HDR* arp_hdr;
 uint8_t send_packet[42];
 uint8_t* recv_packet;
 void find_mac();
-void make_arp_request(ETHER_HDR*,ARP_HDR*,char*);
-void make_eth_packet(ETHER_HDR*);
+void make_arp_request(/*ETHER_HDR*,ARP_HDR*,/*char*);
+void make_eth_packet(/*ETHER_HDR* */);
 void ExtractPkt(int, const u_char*);
 void find_IP(char*);
 
@@ -67,7 +67,7 @@ int main(int arc, char* argv[])
 	pcap_t* handle;
 	find_mac(argv[1]);
 	find_IP(argv[1]);
-	make_arp_request(ether_hdr, arp_hdr,argv[2]);
+	make_arp_request(argv[2]);
 
 	/*while(1)
 	{
@@ -80,17 +80,19 @@ int main(int arc, char* argv[])
 	}*/
 
 	for(int j=0;j<42;j++){
-	printf("[%d. %.02x]",j,send_packet[j]);}
+	//printf("[%d. %.02x]",j,send_packet[j]);
+	printf("%.02x ",send_packet[j]);
+	}
 
-	//if (pcap_sendpacket(handle, send_packet, 42 /* size */ ) != 0 )
+	if (pcap_sendpacket(handle, send_packet, 42 /* size */ ) != 0 )
 	{
-		//printf(stderr, "\nError sending the packet: \n", pcap_geterr(handle));
+		printf(stderr, "\nError sending the packet: \n", pcap_geterr(handle));
 	}
 
         return 0;
 }
 
-void make_eth_packet(ETHER_HDR* ether_hdr)
+void make_eth_packet(/*ETHER_HDR* ether_hdr*/)
 {
 	
 	ether_hdr->eth_dst[0]=0xFF;
@@ -102,29 +104,41 @@ void make_eth_packet(ETHER_HDR* ether_hdr)
 	ether_hdr->eth_type=htons(0x0806);
 	
 	
-	strcat(send_packet,ether_hdr->eth_dst);
+	memcpy(send_packet,ether_hdr->eth_dst,6);
 	memcpy(send_packet+6,ether_hdr->eth_src,6);
 	send_packet[12]=0x08;
 	send_packet[13]=0x06;
 }
 
-void make_arp_request(ETHER_HDR* ether_hdr, ARP_HDR* arp_hdr, char* sender_ip)
+void make_arp_request(/*ETHER_HDR* ether_hdr, ARP_HDR* arp_hdr, */char* sender_ip)
 {
 	make_eth_packet(ether_hdr);
 
 	arp_hdr->hardware_type = htons(ETHERNET);
 	arp_hdr->protocol_type = htons(ARP);
-	arp_hdr->hardware_size = htons(HARD_SIZE);
-	arp_hdr->protocol_size = htons(PRO_SIZE);
+	arp_hdr->hardware_size = HARD_SIZE;
+	arp_hdr->protocol_size = PRO_SIZE;
 	arp_hdr->opcode=htons(0x0001);
-	
-	//strncpy(arp_hdr->sender_macaddr,ether->eth_src,6);
-	//strncpy(arp_hdr->snedr_ipaddr);
-	memcpy(arp_hdr->sender_macaddr,ether_hdr->eth_src,6);
-	memcpy(arp_hdr->target_macaddr,"0x000000000000",6);
-	arp_hdr->target_ipaddr=inet_addr(sender_ip);
 
-	memcpy(send_packet+14,arp_hdr,28);
+	memcpy(arp_hdr->sender_macaddr,ether_hdr->eth_src,6);
+	printf("%s=----\n",sender_ip);
+	arp_hdr->target_ipaddr=inet_addr(sender_ip);
+	printf("%x==\n",arp_hdr->target_ipaddr);
+	
+	memcpy(send_packet+14,&(arp_hdr->hardware_type),2);
+	memcpy(send_packet+16,&(arp_hdr->protocol_type),2);
+	send_packet[18]=arp_hdr->hardware_size ;
+	send_packet[19]=arp_hdr->protocol_type;
+	memcpy(send_packet+20,&(arp_hdr->opcode),2);
+	memcpy(send_packet+22,arp_hdr->sender_macaddr,6);
+	memcpy(send_packet+28,&(arp_hdr->sender_ipaddr),4);
+	memcpy(send_packet+32,arp_hdr->target_macaddr,6);
+	memcpy(send_packet+38,&(arp_hdr->target_ipaddr),4);
+	
+	//arp_hdr->target_ipaddr=inet_addr(sender_ip);
+
+	//*(send_packet+14)=arp_hdr->hardware_type;
+	//memcpy(send_packet+14,&(arp_hdr->hardware_type),4);
 	
 }
 
