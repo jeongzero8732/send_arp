@@ -1,7 +1,6 @@
-#include <arpa/inet.h>
+#include <pcap.h>
 #include <netdb.h>
 #include <ifaddrs.h>
-#include <pcap.h>
 #include <stdio.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -40,15 +39,15 @@ typedef struct arp_hdr {
 
 	uint16_t opcode;
         uint8_t sender_macaddr[MAC_LEN];
-        uint32_t sender_ipaddr;
+        uint8_t sender_ipaddr[IP_LEN];
         uint8_t target_macaddr[MAC_LEN];
-        uint32_t target_ipaddr;
+        uint8_t target_ipaddr[IP_LEN];
 }ARP_HDR;
 
 ETHER_HDR* ether_hdr;
 ARP_HDR* arp_hdr;
 
-uint8_t send_packet[42];
+static uint8_t send_packet[42];
 uint8_t* recv_packet;
 void find_mac();
 void make_arp_request(/*ETHER_HDR*,ARP_HDR*,/*char*);
@@ -59,15 +58,24 @@ void find_IP(char*);
 int main(int arc, char* argv[])
 {
  	char errbuf[PCAP_ERRBUF_SIZE];
-	uint8_t *macaddr;
+	uint8_t *macaddr; 
 	int i;
 	ether_hdr = (ETHER_HDR*)malloc(sizeof(ETHER_HDR));
 	arp_hdr=(ARP_HDR*)malloc(sizeof(ARP_HDR));
 	char* dev=argv[1];
 	pcap_t* handle;
+	memset(send_packet,0,sizeof(send_packet));
+	
+	if ((handle = pcap_open_live(dev, BUFSIZ,1, 1000, errbuf))==NULL)
+	{
+   	 	fprintf(stderr, "couldn't open device %s: %s\n", dev, errbuf);
+   	 	return -1;
+  	}
+	
 	find_mac(argv[1]);
 	find_IP(argv[1]);
 	make_arp_request(argv[2]);
+	printf("%s0000000000000000000\n",argv[2]);
 
 	/*while(1)
 	{
@@ -84,11 +92,16 @@ int main(int arc, char* argv[])
 	printf("%.02x ",send_packet[j]);
 	}
 
-	if (pcap_sendpacket(handle, send_packet, 42 /* size */ ) != 0 )
+	puts("");
+	//for(int i=42;i<100;i++){send_packet[i]=i%256;}
+	if (pcap_sendpacket(handle, send_packet, sizeof(send_packet) /* size */ ) != 0 )
 	{
-		printf(stderr, "\nError sending the packet: \n", pcap_geterr(handle));
+		printf("dfdfdfdfdfdf");
+		//fprintf(stderr,"\nError sending the packet: \n", pcap_geterr(handle));
+		return -1;
 	}
 
+	pcap_close(handle);
         return 0;
 }
 
@@ -112,8 +125,10 @@ void make_eth_packet(/*ETHER_HDR* ether_hdr*/)
 
 void make_arp_request(/*ETHER_HDR* ether_hdr, ARP_HDR* arp_hdr, */char* sender_ip)
 {
-	make_eth_packet(ether_hdr);
+	char* ptr;  
+    	int i=0;
 
+	make_eth_packet(ether_hdr);
 	arp_hdr->hardware_type = htons(ETHERNET);
 	arp_hdr->protocol_type = htons(ARP);
 	arp_hdr->hardware_size = HARD_SIZE;
@@ -121,9 +136,15 @@ void make_arp_request(/*ETHER_HDR* ether_hdr, ARP_HDR* arp_hdr, */char* sender_i
 	arp_hdr->opcode=htons(0x0001);
 
 	memcpy(arp_hdr->sender_macaddr,ether_hdr->eth_src,6);
-	printf("%s=----\n",sender_ip);
-	arp_hdr->target_ipaddr=inet_addr(sender_ip);
-	printf("%x==\n",arp_hdr->target_ipaddr);
+	//printf("%s=----\n",sender_ip);
+
+	for(int i=0;i<5;i++){arp_hdr->target_macaddr[i]=0x00;}
+
+
+	
+
+	//memcpy(arp_hdr->target_ipaddr,inet_addr(sender_ip),4);
+	//printf("%x==\n",arp_hdr->target_ipaddr);
 	
 	memcpy(send_packet+14,&(arp_hdr->hardware_type),2);
 	memcpy(send_packet+16,&(arp_hdr->protocol_type),2);
@@ -133,12 +154,20 @@ void make_arp_request(/*ETHER_HDR* ether_hdr, ARP_HDR* arp_hdr, */char* sender_i
 	memcpy(send_packet+22,arp_hdr->sender_macaddr,6);
 	memcpy(send_packet+28,&(arp_hdr->sender_ipaddr),4);
 	memcpy(send_packet+32,arp_hdr->target_macaddr,6);
-	memcpy(send_packet+38,&(arp_hdr->target_ipaddr),4);
-	
-	//arp_hdr->target_ipaddr=inet_addr(sender_ip);
 
-	//*(send_packet+14)=arp_hdr->hardware_type;
-	//memcpy(send_packet+14,&(arp_hdr->hardware_type),4);
+	//memcpy(send_packet+14, arp_hdr, sizeof(arp_hdr));
+	ptr=strtok(sender_ip,".");	
+	i=38;
+	while(ptr!=NULL)
+	{
+		printf("\n----------------%s\n",ptr);
+		send_packet[i]=atoi(ptr);
+		//printf("==%x==",arp_hdr->sender_ipaddr[i]);
+		ptr=strtok(NULL,".");
+		i++;
+		if(i==42) break;
+	}
+
 	
 }
 
@@ -161,12 +190,9 @@ void find_mac(char* device)
     }
     for(i=0;i<MAC_LEN;i++)
     {
-        ether_hdr->eth_src[i] = mac[i];
-	printf("%x--\n",ether_hdr->eth_src[i]);
-//	memcpy(ether_hdr->eth_src,mac,6);
-	//ether_hdr->eth_src[i]=mac[i];	
+        ether_hdr->eth_src[i] = mac[i];	
     }	
-    //printf("Mac : %.2X:%.2X:%.2X:%.2X:%.2X:%.2X\n" , arp_hdr->sender_macaddr[0], arp_hdr->sender_macaddr[1], arp_hdr->sender_macaddr[2], arp_hdr->sender_macaddr[3], arp_hdr->sender_macaddr[4], arp_hdr->sender_macaddr[5]);
+    
     
 	
     close(fd);
@@ -178,7 +204,9 @@ void find_IP(char* device)
     struct ifaddrs *ifaddr, *ifa;
     int family, s;
     char host[NI_MAXHOST];
-
+    char* ptr;  
+    int i=0;
+	//printf("123123\n");
     if (getifaddrs(&ifaddr) == -1) 
     {
         perror("getifaddrs");
@@ -190,23 +218,34 @@ void find_IP(char* device)
     {
         if (ifa->ifa_addr == NULL)
             continue;  
-
+	//printf("456\n");
         s=getnameinfo(ifa->ifa_addr,sizeof(struct sockaddr_in),host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
 
         if((strcmp(ifa->ifa_name,device)==0)&&(ifa->ifa_addr->sa_family==AF_INET))
         {
+	//printf("789\n");
             if (s != 0)
             {
                 printf("getnameinfo() failed: %s\n", gai_strerror(s));
                 exit(EXIT_FAILURE);
             }
             printf("\tInterface : <%s>\n",ifa->ifa_name );
-            printf("\t  Address : <%s>\n", host);
-	    arp_hdr->sender_ipaddr=inet_addr(host);
-	   printf("--%x--\n",arp_hdr->sender_ipaddr);
+            printf("\t  Address : <%s >\n", host);
+
+	  // printf("--%x--\n",arp_hdr->sender_ipaddr);
         }
     }
 
+	ptr=strtok(host,".");
+	while(ptr!=NULL)
+	{
+		//printf("%s\n",ptr);
+		arp_hdr->sender_ipaddr[i]=atoi(ptr);
+		printf("==%x==",arp_hdr->sender_ipaddr[i]);
+		ptr=strtok(NULL,".");
+		i++;
+	}
+	
     freeifaddrs(ifaddr);
 }
 
